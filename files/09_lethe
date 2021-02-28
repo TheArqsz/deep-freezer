@@ -1,0 +1,148 @@
+#! /bin/sh -e
+
+# update-grub helper script.
+# Copyright (C) 2006,2007,2008  Free Software Foundation, Inc.
+#
+# GRUB is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# GRUB is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with GRUB.  If not, see <http://www.gnu.org/licenses/>.
+
+prefix=/usr
+exec_prefix=${prefix}
+libdir=${exec_prefix}/lib
+. ${libdir}/grub/update-grub_lib
+
+if [ "x${GRUB_DISTRIBUTOR}" = "x" ] ; then
+  OS=GNU/Linux
+else
+  OS="${GRUB_DISTRIBUTOR} GNU/Linux"
+fi
+# loop-AES arranges things so that /dev/loop/X can be our root device, but
+# the initrds that Linux uses don't like that.
+case ${GRUB_DEVICE} in
+  /dev/loop/*|/dev/loop[0-9])
+    GRUB_DEVICE=`losetup ${GRUB_DEVICE} | sed -e "s/^[^(]*(\([^)]\+\)).*/\1/"`
+  ;;
+esac
+
+if [ "x${GRUB_DEVICE_UUID}" = "x" ] || [ "x${GRUB_DISABLE_LINUX_UUID}" = "xtrue" ] \
+    || ! test -e "/dev/disk/by-uuid/${GRUB_DEVICE_UUID}" \
+    || [ "`grub-probe -t abstraction --device ${GRUB_DEVICE}`" != "" ] ; then
+  LINUX_ROOT_DEVICE=${GRUB_DEVICE}
+else
+  LINUX_ROOT_DEVICE=UUID=${GRUB_DEVICE_UUID}
+fi
+
+test_numeric ()
+{
+  local a=$1
+  local cmp=$2
+  local b=$3
+  if [ "$a" = "$b" ] ; then
+    case $cmp in
+      ge|eq|le) return 0 ;;
+      gt|lt) return 1 ;;
+    esac
+  fi
+  if [ "$cmp" = "lt" ] ; then
+    c=$a
+    a=$b
+    b=$c
+  fi
+  if (echo $a ; echo $b) | sort -n | head -n 1 | grep -qx $b ; then
+    return 0
+  else
+    return 1
+  fi
+}
+
+test_gt ()
+{
+  local a=`echo $1 | sed -e "s,.*/vmlinu[zx]-,,g;s/[._-]\(pre\|rc\|test\|git\|old\)/~\1/g"`
+  local b=`echo $2 | sed -e "s,.*/vmlinu[zx]-,,g;s/[._-]\(pre\|rc\|test\|git\|old\)/~\1/g"`
+  if [ "x$b" = "x" ] ; then
+    return 0
+  fi
+  dpkg --compare-versions "$a" gt "$b"
+  return $?
+}
+
+find_latest ()
+{
+  local a=""
+  for i in $@ ; do
+    if test_gt "$i" "$a" ; then
+      a="$i"
+    fi
+  done
+  echo "$a"
+}
+
+list=`for i in /boot/vmlinu[xz]-* /vmlinu[xz]-* ; do
+        if grub_file_is_not_garbage "$i" ; then echo -n "$i " ; fi
+      done`
+
+while [ "x$list" != "x" ] ; do
+  linux=`find_latest $list`
+  echo "Found linux image: $linux" >&2
+  basename=`basename $linux`
+  dirname=`dirname $linux`
+  rel_dirname=`make_system_path_relative_to_its_root $dirname`
+  version=`echo $basename | sed -e "s,^[^0-9]*-,,g"`
+  alt_version=`echo $version | sed -e "s,\.old$,,g"`
+  linux_root_device_thisversion="${LINUX_ROOT_DEVICE}"
+
+  initrd=
+  for i in "initrd.img-${version}" "initrd-${version}.img" \
+	   "initrd.img-${alt_version}" "initrd-${alt_version}.img"; do
+    if test -e "${dirname}/${i}" ; then
+      initrd="$i"
+      break
+    fi
+  done
+  if test -n "${initrd}" ; then
+    echo "Found initrd image: ${dirname}/${initrd}" >&2
+  else
+    # "UUID=" magic is parsed by initrds.  Since there's no initrd, it can't work here.
+    linux_root_device_thisversion=${GRUB_DEVICE}
+  fi
+
+  newest_version=`uname -r`
+  pers_prefix="Persistent (not Lethe-freezed) "
+  if [ "$version" = "$newest_version" ]; then 
+    cat << EOF
+menuentry "${GRUB_DISTRIBUTOR#"$pers_prefix"}" {
+EOF
+  else
+    list=`echo $list | tr ' ' '\n' | grep -vx $linux | tr '\n' ' '`
+    continue
+# Gonna skip this part because most people want only the latest version
+#     cat << EOF
+# menuentry "${OS#"$pers_prefix"}, linux ${version} (freezed with Lethe)" {
+# EOF
+  fi
+  
+  prepare_grub_to_access_device ${GRUB_DEVICE_BOOT} | sed -e "s/^/\t/"
+  cat << EOF
+	linux	${rel_dirname}/${basename} root=${linux_root_device_thisversion} ro ${GRUB_CMDLINE_LINUX} ${GRUB_CMDLINE_LINUX_DEFAULT} aufs=tmpfs apparmor=0
+EOF
+  if test -n "${initrd}" ; then
+    cat << EOF
+	initrd	${rel_dirname}/${initrd}
+EOF
+  fi
+  cat << EOF
+}
+EOF
+
+  list=`echo $list | tr ' ' '\n' | grep -vx $linux | tr '\n' ' '`
+done
