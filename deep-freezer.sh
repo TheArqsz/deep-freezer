@@ -175,7 +175,7 @@ else
     [ -z "/etc/grub.d/09_lethe" ] && rm /etc/grub.d/09_lethe
     update_postrm
     apt-get purge -y --ignore-missing lethe 2>/var/log/deepfreeze.error.log || die "Error during uninstalling"
-    msg "${GREEN}Finished unfreeze - reboot in 5 seconds (CTR-C to interrupt it) ${NOFORMAT}"
+    msg "${GREEN}Finished unfreeze - reboot in 5 seconds (CTRL-C to interrupt it) ${NOFORMAT}"
     i=5 && while [ $i -gt 0 ]; do sleep 1; i=$(($i-1)); printf "$i "; done && reboot
 
 fi
