@@ -6,7 +6,7 @@ translate() {
 }
 
 update_postrm() {
-    [ ! -z /var/lib/dpkg/info/lethe.postrm ] && exit
+    [ ! -z /var/lib/dpkg/info/lethe.postrm ] && return
     translate /var/lib/dpkg/info/lethe.postrm 
     sed -i "s/rm -rv \/etc\/lethe >&2/\[ -e \/etc\/lethe \] \&\& rm -rv \/etc\/lethe 2>\/var\/log\/lethe.error.log/g" /var/lib/dpkg/info/lethe.postrm 
     sed -i "s/rm -v \/etc\/initramfs-tools\/scripts\/__lethe/\[ -e \/etc\/initramfs-tools\/scripts\/__lethe \] \&\& rm -v \/etc\/initramfs-tools\/scripts\/__lethe 2>\/var\/log\/lethe.error.log/g" /var/lib/dpkg/info/lethe.postrm 
